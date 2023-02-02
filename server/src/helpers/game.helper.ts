@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { GameBoard, horizontal__tiles, RegisterNewGameWithPlayer, vertical__tiles } from "../config/game.config.js";
+import { GameBoard, horizontal__tiles, PositionType, RedisGameBoard, RegisterNewGameWithPlayer, vertical__tiles } from "../config/game.config.js";
 import { Game } from "../models/game.model.js";
 import { Player } from "../models/player.model.js";
 import { addMinutes } from "./util.helper.js";
@@ -297,4 +297,238 @@ export const findCross = ({
             }
         }
     }
+}
+
+/**
+ * get all possible move
+ */
+export const findPossibleMoves = (position: string, game: RedisGameBoard, maximum: number, realOrBot: boolean) : string[] => {
+    if ( !realOrBot && game.realPlayer[position] ) {
+        var possible = []
+        var findKillPositions : string[] = [];
+        var findPossiblePositions : string[] = [];
+
+        let kills : null | string[] = null;
+        if ( game.realPlayer[position] === 'normal' ) {
+            kills = findKillMoves(position, game, 1, false);
+        } else if ( game.realPlayer[position] === 'king' ) {
+            kills = findKillMoves(position, game, 2, false);
+        } else {
+            throw new Error("unknown position_type")
+        }
+
+        if(kills) findKillPositions.push(...kills);
+
+        /**
+         * if there is any kill possible -> push it to possible
+         */
+        if ( findKillPositions.length > 0 ) {
+            possible.push(...findKillPositions);
+        }
+
+        /**
+         * if we didn't find maximum number of kills
+         */
+        if ( possible.length < maximum ) {
+            let possibleMove : null | string[] = null;
+            if ( game.realPlayer[position] === 'normal' ) {
+                possibleMove = findAnyPossibleMoves(position, game, 1, false);
+            } else if ( game.realPlayer[position] === 'king' ) {
+                possibleMove = findAnyPossibleMoves(position, game, 2);
+            } else {
+                throw new Error("unknown position_type")
+            }
+
+            if ( possibleMove ) findPossiblePositions.push(...possibleMove);
+
+            /**
+             * if there is any kill possible -> push it to possible
+             */
+            if ( findPossiblePositions.length > 0 ) {
+                possible.push(...findPossiblePositions);
+            }
+        }
+
+        return possible.filter((_, i) => i < maximum);
+    } else {
+        throw new Error("invalid player position");
+    }
+}
+
+const canKillPosition = (from, game, realOrNot) => {
+    var killed = []
+    Object.keys(directionConfig).every((direction) => {
+      const jump = findCross({ ...directionConfig[direction], steps: 2, position: from });
+      const between = findCross({ ...directionConfig[direction], steps: 1, position: from });
+      
+      if (realOrNot) {  
+        if (game.botPlayer[between] && !game.realPlayer[jump] && !game.botPlayer[jump]) {
+          killed.push(between)
+        }
+      } else {
+        if (game.realPlayer[between] && !game.realPlayer[jump] && !game.botPlayer[jump]) {
+          killed.push(between)
+        }
+      }
+    })
+}
+
+export const findAnyPossibleMoves = (position: string, game: RedisGameBoard, position_type: PositionType, forwardOrBack?: boolean): string[] => {
+    var available = []
+    if (position_type === 1) {
+        if (!forwardOrBack) {
+            const rightCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
+            const leftCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
+
+
+            if ( rightCross && !game.realPlayer[rightCross] && !game.botPlayer[rightCross] ) {
+                available.push(rightCross)
+            }
+
+            if ( leftCross && !game.realPlayer[leftCross] && !game.botPlayer[leftCross] ) {
+                available.push(leftCross);
+            }
+        } else {
+            const rightCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
+            const leftCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
+
+
+            if ( rightCross && !game.realPlayer[rightCross] && !game.botPlayer[rightCross] ) {
+                available.push(rightCross);
+            }
+
+            if ( leftCross && !game.realPlayer[leftCross] && !game.botPlayer[leftCross] ) {
+                available.push(leftCross);
+            }
+        }
+    } else if (position_type === 2) {
+        const rightForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
+        const leftForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
+        const leftBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
+        const rightBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
+
+
+        if ( rightForwardCross && !game.realPlayer[rightForwardCross] && !game.botPlayer[rightForwardCross] ) {
+            available.push(rightForwardCross)
+        }
+
+        if ( leftForwardCross && !game.realPlayer[leftForwardCross] && !game.botPlayer[leftForwardCross] ) {
+            available.push(leftForwardCross)
+        }
+
+        if ( leftBackCross && !game.realPlayer[leftBackCross] && !game.botPlayer[leftBackCross] ) {
+            available.push(leftBackCross)
+        }
+
+        if ( rightBackCross && !game.realPlayer[rightBackCross] && !game.botPlayer[rightBackCross] ) {
+            available.push(rightBackCross)
+        }
+    } else {
+        throw new Error('position_type is invalid')
+    }
+    return available;
+}
+
+export const findKillMoves = (position: string, game: RedisGameBoard, position_type: PositionType, forwardOrBack?: boolean, realOrBot: boolean = false) : string[] => {
+    var available = []
+    if (position_type === 1) {
+        if (!forwardOrBack) {
+            const rightCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 2 })
+            const leftCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 2 })
+
+
+            if ( rightCrossSecond && !game.realPlayer[rightCrossSecond] && !game.botPlayer[rightCrossSecond] ) {
+                const rightCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
+
+                if (!realOrBot) {
+                    if ( rightCross && game.botPlayer[rightCross] ) available.push(rightCrossSecond);
+                } else {
+                    if ( rightCross && game.realPlayer[rightCross] ) available.push(rightCrossSecond);
+                }
+            }
+
+            if ( leftCrossSecond && !game.realPlayer[leftCrossSecond] && !game.botPlayer[leftCrossSecond] ) {
+                const leftCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
+
+                if (!realOrBot) {
+                    if ( leftCross && game.botPlayer[leftCross] ) available.push(leftCrossSecond);
+                } else {
+                    if ( leftCross && game.realPlayer[leftCross] ) available.push(leftCrossSecond);
+                }
+            }
+        } else {
+            const rightCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 2 })
+            const leftCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 2 })
+
+
+            if ( rightCrossSecond && !game.realPlayer[rightCrossSecond] && !game.botPlayer[rightCrossSecond] ) {
+                const rightCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
+
+                if (!realOrBot) {
+                    if ( rightCross && game.botPlayer[rightCross] ) available.push(rightCrossSecond);
+                } else {
+                    if ( rightCross && game.realPlayer[rightCross] ) available.push(rightCrossSecond);
+                }
+            }
+
+            if ( leftCrossSecond && !game.realPlayer[leftCrossSecond] && !game.botPlayer[leftCrossSecond] ) {
+                const leftCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
+
+                if (!realOrBot) {
+                    if ( leftCross && game.botPlayer[leftCross] ) available.push(leftCrossSecond);
+                } else {
+                    if ( leftCross && game.realPlayer[leftCross] ) available.push(leftCrossSecond);
+                }
+            }
+        }
+    } else if (position_type === 2) {
+        const rightForwardCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 2 })
+        const leftForwardCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 2 })
+        const leftBackCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 2 })
+        const rightBackCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 2 })
+
+
+        if ( rightForwardCrossSecond && !game.realPlayer[rightForwardCrossSecond] && !game.botPlayer[rightForwardCrossSecond] ) {
+            const rightForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
+
+            if (!realOrBot) {
+                if ( rightForwardCross && game.botPlayer[rightForwardCross] ) available.push(rightForwardCrossSecond);
+            } else {
+                if ( rightForwardCross && game.realPlayer[rightForwardCross] ) available.push(rightForwardCrossSecond);
+            }
+        }
+
+        if ( leftForwardCrossSecond && !game.realPlayer[leftForwardCrossSecond] && !game.botPlayer[leftForwardCrossSecond] ) {
+            const leftForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
+
+            if (!realOrBot) {
+                if ( leftForwardCross && game.botPlayer[leftForwardCross] ) available.push(leftForwardCrossSecond);
+            } else {
+                if ( leftForwardCross && game.realPlayer[leftForwardCross] ) available.push(leftForwardCrossSecond);
+            }
+        }
+
+        if ( leftBackCrossSecond && !game.realPlayer[leftBackCrossSecond] && !game.botPlayer[leftBackCrossSecond] ) {
+            const leftBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
+
+            if (!realOrBot) {
+                if ( leftBackCross && game.botPlayer[leftBackCross] ) available.push(leftBackCrossSecond);
+            } else {
+                if ( leftBackCross && game.realPlayer[leftBackCross] ) available.push(leftBackCrossSecond);
+            }
+        }
+
+        if ( rightBackCrossSecond && !game.realPlayer[rightBackCrossSecond] && !game.botPlayer[rightBackCrossSecond] ) {
+            const rightBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
+
+            if (!realOrBot) {
+                if ( rightBackCross && game.botPlayer[rightBackCross] ) available.push(rightBackCrossSecond);
+            } else {
+                if ( rightBackCross && game.realPlayer[rightBackCross] ) available.push(rightBackCrossSecond);
+            }
+        }
+    } else {
+        throw new Error('position_type is invalid')
+    }
+    return available;
 }
