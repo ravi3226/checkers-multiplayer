@@ -11,6 +11,7 @@ import { instrument } from '@socket.io/admin-ui'
 import {dirname, join} from 'path'
 import { fileURLToPath } from 'url';
 import { createGame } from './controllers/game.controller.js'
+import { getPossibleMove, moveTile } from './controllers/player.controller.js'
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +41,8 @@ connectToRedis().then(() => {
             socket.on('user:login', (payload) => loginUser(io, socket, payload))
             socket.on('token:refresh', (payload) => refreshToken(io, socket, payload))
             socket.on('game:create', async (payload) => await createGame(io, socket, payload))
+            socket.on('player:move-possible', async (payload) => await getPossibleMove(io, socket, payload))
+            socket.on('player:move', async (payload) => moveTile(io, socket, payload))
         })
 
         instrument(io, {

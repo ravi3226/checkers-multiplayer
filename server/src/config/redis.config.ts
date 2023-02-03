@@ -18,3 +18,9 @@ export interface setRedis {
     message?: string,
     stored?: any
 }
+
+export interface getRedis {
+    success: boolean,
+    message?: string,
+    value?: any
+}

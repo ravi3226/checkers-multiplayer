@@ -23,6 +23,11 @@ export enum PositionType {
     king = 2
 }
 
+export enum PlayerType {
+    player1 = 1,
+    player2 = 2
+}
+
 export interface FoundPossibleMove {
     from: null | string,
     to: string[],
@@ -36,4 +41,12 @@ export interface RegisterNewGameWithPlayer {
     newGameBoard?: GameBoard,
     waiting?: boolean,
     oponentSocketId?: string
+}
+
+export interface PossibleMove {
+    from: string,
+    jumpTo: string,
+    kill?: string[],
+    from2?: string,
+    jumpTo2?: string
 }

@@ -1,8 +1,47 @@
 import mongoose from 'mongoose';
 import { registerNewPlayerForGame, reverseGameBoard } from '../helpers/game.helper.js';
 import { validateAuthToken } from '../middlewares/user.middleware.js';
+import { Game } from '../models/game.model.js';
 import { redisSetKeyValue } from '../services/redis.service.js';
+export const findGame = async (gameId) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const existingGame = await Game.findById(gameId).populate({
+                path: 'player1',
+                populate: {
+                    path: 'userId'
+                }
+            }).populate({
+                path: 'player2',
+                populate: {
+                    path: 'userId'
+                }
+            });
+            if (existingGame) {
+                resolve({
+                    success: true,
+                    game: existingGame
+                });
+            }
+            else {
+                reject({
+                    success: false,
+                    message: 'invalid gameId'
+                });
+            }
+        }
+        catch (e) {
+            reject({
+                success: false,
+                message: e.message
+            });
+        }
+    });
+};
 export const createGame = async (io, socket, payload) => {
+    /**
+     * validate the user by JWT token authentication
+     */
     validateAuthToken(payload.token, socket.id)
         .then(async (tokenValidate) => {
         if (!tokenValidate.validate) {
@@ -11,6 +50,9 @@ export const createGame = async (io, socket, payload) => {
             });
         }
         else {
+            /**
+             * get the requesting user and all the online user waiting to play the game
+             */
             const userId = tokenValidate.id;
             const onlineUsersSocketIds = Array.from(io.sockets.adapter.sids.keys());
             /**

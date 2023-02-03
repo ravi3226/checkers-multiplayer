@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { GameBoard, horizontal__tiles, PositionType, RedisGameBoard, RegisterNewGameWithPlayer, vertical__tiles } from "../config/game.config.js";
+import { GameBoard, horizontal__tiles, PlayerType, PositionType, PossibleMove, RegisterNewGameWithPlayer, vertical__tiles } from "../config/game.config.js";
 import { Game } from "../models/game.model.js";
 import { Player } from "../models/player.model.js";
 import { addMinutes } from "./util.helper.js";
@@ -12,6 +12,20 @@ export const directionConfig = {
     rightForward: { forwardOrBack: false, leftOrRight: true },
     rightBack: { forwardOrBack: true, leftOrRight: true },
     leftBack: { forwardOrBack: true, leftOrRight: false }
+}
+
+export const normalDirectionConfig = (playerType: PlayerType) : object => {
+    if ( playerType === 1) {
+        return {
+            leftForward: { forwardOrBack: false, leftOrRight: false },
+            rightForward: { forwardOrBack: false, leftOrRight: true }
+        }
+    } else if (playerType === 2) {
+        return {
+            rightBack: { forwardOrBack: true, leftOrRight: true },
+            leftBack: { forwardOrBack: true, leftOrRight: false }
+        }
+    } else throw new Error('Invalid playerType :: normalDirectionConfig() !')
 }
 
 /**
@@ -195,6 +209,7 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                                 resolve({
                                     success: true,
                                     waiting: true,
+                                    newGameBoard: newGameBoard
                                 })
                             }
 
@@ -300,235 +315,143 @@ export const findCross = ({
 }
 
 /**
- * get all possible move
+ * find possible move
+ * 1. find possible kills move
+ * 2. find normal
  */
-export const findPossibleMoves = (position: string, game: RedisGameBoard, maximum: number, realOrBot: boolean) : string[] => {
-    if ( !realOrBot && game.realPlayer[position] ) {
-        var possible = []
-        var findKillPositions : string[] = [];
-        var findPossiblePositions : string[] = [];
+export const findPossibleMove = ({
+    position,
+    playerType,
+    game,
+    positionType = 1
+} : {
+    position: string,
+    playerType: PlayerType,
+    game: GameBoard,
+    positionType: PositionType
+}) : PossibleMove[] => {
+    console.log(position)
+    /**
+     * check if there is any kill possible or not
+     */
+    const possibleKillMoves = findKillPossibleMoves({ position: position, playerType: playerType, game: game, positionType: positionType })
 
-        let kills : null | string[] = null;
-        if ( game.realPlayer[position] === 'normal' ) {
-            kills = findKillMoves(position, game, 1, false);
-        } else if ( game.realPlayer[position] === 'king' ) {
-            kills = findKillMoves(position, game, 2, false);
-        } else {
-            throw new Error("unknown position_type")
-        }
+    /**
+     * find normal moves
+     */
+    const possibleNormalMoves = findNormalPossibleMoves({ position: position, playerType: playerType, game: game, positionType: positionType});
 
-        if(kills) findKillPositions.push(...kills);
+    const moves = [...possibleKillMoves, ...possibleNormalMoves];
+
+    return moves.filter((_, index) => index < (positionType === 1 ? 2 : 4))
+}
+
+/**
+ * find possible kill position by given 'position'
+ */
+export const findKillPossibleMoves = ({
+    position,
+    playerType,
+    game,
+    positionType = 1
+} : {
+    position: string,
+    playerType: PlayerType,
+    game: GameBoard,
+    positionType: PositionType
+}) : PossibleMove[] => {
+    var possibleKill = [];
+    if ( !validatePosition(position) ) throw new Error('invalid position :: findKillPossible() !')
+    else {
+        let otherPlayer = playerType === 1 ? 'player2' : 'player1';
 
         /**
-         * if there is any kill possible -> push it to possible
+         * find kills for normal position
          */
-        if ( findKillPositions.length > 0 ) {
-            possible.push(...findKillPositions);
-        }
+        const directionConfigs = positionType === 1 ? normalDirectionConfig(playerType) : directionConfig;
+
+        Object.keys(directionConfigs).forEach(directionPosition => {
+            const firstJump = findCross({...directionConfigs[directionPosition], position: position, steps: 2})
+            const between = findCross({...directionConfigs[directionPosition], position: position, steps: 1})
+
+            var foundKill = {}
+            if ( between && game[otherPlayer][between] ) {
+                if ( firstJump && !game.player1[firstJump] && !game.player2[firstJump] ) {
+                    foundKill['first'] = {};
+                    foundKill['first']['from'] = position;
+                    foundKill['first']['kill'] = between;
+                    foundKill['first']['jumpTo'] = firstJump;
+                }
+            }
+
+            if (foundKill['first']) {
+                Object.keys(directionConfigs).forEach(directionPosition => {
+                    const firstJump = findCross({...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 2})
+                    const between = findCross({...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 1})
+
+                    var foundKill = {}
+                    if ( between && game[otherPlayer][between] ) {
+                        if ( firstJump && !game.player1[firstJump] && !game.player2[firstJump] && firstJump !== position) {
+                            foundKill['first']['from2'] = foundKill['first'].jumpTo;
+                            foundKill['first']['kill'] = [...foundKill['first']['kill'], between];
+                            foundKill['first']['jumpTo2'] = firstJump;
+                        }
+                    }
+                })
+            }
+
+            if (foundKill['first']) possibleKill.push(foundKill['first']);
+        });
+    }
+
+    /**
+     * return two kill if positionType is normal 
+     * return four kill if positionType is king
+     */
+    return possibleKill.filter((_, index) => index < (positionType === 1 ? 2 : 4))
+}
+
+/**
+ * find possible kill position by given 'position'
+ */
+export const findNormalPossibleMoves = ({
+    position,
+    playerType,
+    game,
+    positionType = 1
+} : {
+    position: string,
+    playerType: PlayerType,
+    game: GameBoard,
+    positionType: PositionType
+}) : PossibleMove[] => {
+    var possibleKill = [];
+    if ( !validatePosition(position) ) throw new Error('invalid position :: findKillPossible() !')
+    else {
+        let otherPlayer = playerType === 1 ? 'player2' : 'player1';
 
         /**
-         * if we didn't find maximum number of kills
+         * find kills for normal position
          */
-        if ( possible.length < maximum ) {
-            let possibleMove : null | string[] = null;
-            if ( game.realPlayer[position] === 'normal' ) {
-                possibleMove = findAnyPossibleMoves(position, game, 1, false);
-            } else if ( game.realPlayer[position] === 'king' ) {
-                possibleMove = findAnyPossibleMoves(position, game, 2);
-            } else {
-                throw new Error("unknown position_type")
+        const directionConfigs = positionType === 1 ? normalDirectionConfig(playerType) : directionConfig;
+
+        Object.keys(directionConfigs).forEach(directionPosition => {
+            const cross = findCross({...directionConfigs[directionPosition], position: position, steps: 1})
+
+            var foundKill = {}
+            if ( cross && !game.player1[cross] && !game.player2[cross]) {
+                foundKill['first'] = {};
+                foundKill['first']['from'] = position;
+                foundKill['first']['jumpTo'] = cross;
             }
 
-            if ( possibleMove ) findPossiblePositions.push(...possibleMove);
-
-            /**
-             * if there is any kill possible -> push it to possible
-             */
-            if ( findPossiblePositions.length > 0 ) {
-                possible.push(...findPossiblePositions);
-            }
-        }
-
-        return possible.filter((_, i) => i < maximum);
-    } else {
-        throw new Error("invalid player position");
+            if (foundKill['first']) possibleKill.push(foundKill['first']);
+        });
     }
-}
 
-const canKillPosition = (from, game, realOrNot) => {
-    var killed = []
-    Object.keys(directionConfig).every((direction) => {
-      const jump = findCross({ ...directionConfig[direction], steps: 2, position: from });
-      const between = findCross({ ...directionConfig[direction], steps: 1, position: from });
-      
-      if (realOrNot) {  
-        if (game.botPlayer[between] && !game.realPlayer[jump] && !game.botPlayer[jump]) {
-          killed.push(between)
-        }
-      } else {
-        if (game.realPlayer[between] && !game.realPlayer[jump] && !game.botPlayer[jump]) {
-          killed.push(between)
-        }
-      }
-    })
-}
-
-export const findAnyPossibleMoves = (position: string, game: RedisGameBoard, position_type: PositionType, forwardOrBack?: boolean): string[] => {
-    var available = []
-    if (position_type === 1) {
-        if (!forwardOrBack) {
-            const rightCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
-            const leftCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
-
-
-            if ( rightCross && !game.realPlayer[rightCross] && !game.botPlayer[rightCross] ) {
-                available.push(rightCross)
-            }
-
-            if ( leftCross && !game.realPlayer[leftCross] && !game.botPlayer[leftCross] ) {
-                available.push(leftCross);
-            }
-        } else {
-            const rightCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
-            const leftCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
-
-
-            if ( rightCross && !game.realPlayer[rightCross] && !game.botPlayer[rightCross] ) {
-                available.push(rightCross);
-            }
-
-            if ( leftCross && !game.realPlayer[leftCross] && !game.botPlayer[leftCross] ) {
-                available.push(leftCross);
-            }
-        }
-    } else if (position_type === 2) {
-        const rightForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
-        const leftForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
-        const leftBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
-        const rightBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
-
-
-        if ( rightForwardCross && !game.realPlayer[rightForwardCross] && !game.botPlayer[rightForwardCross] ) {
-            available.push(rightForwardCross)
-        }
-
-        if ( leftForwardCross && !game.realPlayer[leftForwardCross] && !game.botPlayer[leftForwardCross] ) {
-            available.push(leftForwardCross)
-        }
-
-        if ( leftBackCross && !game.realPlayer[leftBackCross] && !game.botPlayer[leftBackCross] ) {
-            available.push(leftBackCross)
-        }
-
-        if ( rightBackCross && !game.realPlayer[rightBackCross] && !game.botPlayer[rightBackCross] ) {
-            available.push(rightBackCross)
-        }
-    } else {
-        throw new Error('position_type is invalid')
-    }
-    return available;
-}
-
-export const findKillMoves = (position: string, game: RedisGameBoard, position_type: PositionType, forwardOrBack?: boolean, realOrBot: boolean = false) : string[] => {
-    var available = []
-    if (position_type === 1) {
-        if (!forwardOrBack) {
-            const rightCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 2 })
-            const leftCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 2 })
-
-
-            if ( rightCrossSecond && !game.realPlayer[rightCrossSecond] && !game.botPlayer[rightCrossSecond] ) {
-                const rightCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
-
-                if (!realOrBot) {
-                    if ( rightCross && game.botPlayer[rightCross] ) available.push(rightCrossSecond);
-                } else {
-                    if ( rightCross && game.realPlayer[rightCross] ) available.push(rightCrossSecond);
-                }
-            }
-
-            if ( leftCrossSecond && !game.realPlayer[leftCrossSecond] && !game.botPlayer[leftCrossSecond] ) {
-                const leftCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
-
-                if (!realOrBot) {
-                    if ( leftCross && game.botPlayer[leftCross] ) available.push(leftCrossSecond);
-                } else {
-                    if ( leftCross && game.realPlayer[leftCross] ) available.push(leftCrossSecond);
-                }
-            }
-        } else {
-            const rightCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 2 })
-            const leftCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 2 })
-
-
-            if ( rightCrossSecond && !game.realPlayer[rightCrossSecond] && !game.botPlayer[rightCrossSecond] ) {
-                const rightCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
-
-                if (!realOrBot) {
-                    if ( rightCross && game.botPlayer[rightCross] ) available.push(rightCrossSecond);
-                } else {
-                    if ( rightCross && game.realPlayer[rightCross] ) available.push(rightCrossSecond);
-                }
-            }
-
-            if ( leftCrossSecond && !game.realPlayer[leftCrossSecond] && !game.botPlayer[leftCrossSecond] ) {
-                const leftCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
-
-                if (!realOrBot) {
-                    if ( leftCross && game.botPlayer[leftCross] ) available.push(leftCrossSecond);
-                } else {
-                    if ( leftCross && game.realPlayer[leftCross] ) available.push(leftCrossSecond);
-                }
-            }
-        }
-    } else if (position_type === 2) {
-        const rightForwardCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 2 })
-        const leftForwardCrossSecond = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 2 })
-        const leftBackCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 2 })
-        const rightBackCrossSecond = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 2 })
-
-
-        if ( rightForwardCrossSecond && !game.realPlayer[rightForwardCrossSecond] && !game.botPlayer[rightForwardCrossSecond] ) {
-            const rightForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: true, steps: 1 })
-
-            if (!realOrBot) {
-                if ( rightForwardCross && game.botPlayer[rightForwardCross] ) available.push(rightForwardCrossSecond);
-            } else {
-                if ( rightForwardCross && game.realPlayer[rightForwardCross] ) available.push(rightForwardCrossSecond);
-            }
-        }
-
-        if ( leftForwardCrossSecond && !game.realPlayer[leftForwardCrossSecond] && !game.botPlayer[leftForwardCrossSecond] ) {
-            const leftForwardCross = findCross({ position: position, forwardOrBack: false, leftOrRight: false, steps: 1 })
-
-            if (!realOrBot) {
-                if ( leftForwardCross && game.botPlayer[leftForwardCross] ) available.push(leftForwardCrossSecond);
-            } else {
-                if ( leftForwardCross && game.realPlayer[leftForwardCross] ) available.push(leftForwardCrossSecond);
-            }
-        }
-
-        if ( leftBackCrossSecond && !game.realPlayer[leftBackCrossSecond] && !game.botPlayer[leftBackCrossSecond] ) {
-            const leftBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: false, steps: 1 })
-
-            if (!realOrBot) {
-                if ( leftBackCross && game.botPlayer[leftBackCross] ) available.push(leftBackCrossSecond);
-            } else {
-                if ( leftBackCross && game.realPlayer[leftBackCross] ) available.push(leftBackCrossSecond);
-            }
-        }
-
-        if ( rightBackCrossSecond && !game.realPlayer[rightBackCrossSecond] && !game.botPlayer[rightBackCrossSecond] ) {
-            const rightBackCross = findCross({ position: position, forwardOrBack: true, leftOrRight: true, steps: 1 })
-
-            if (!realOrBot) {
-                if ( rightBackCross && game.botPlayer[rightBackCross] ) available.push(rightBackCrossSecond);
-            } else {
-                if ( rightBackCross && game.realPlayer[rightBackCross] ) available.push(rightBackCrossSecond);
-            }
-        }
-    } else {
-        throw new Error('position_type is invalid')
-    }
-    return available;
+    /**
+     * return two kill if positionType is normal 
+     * return four kill if positionType is king
+     */
+    return possibleKill.filter((_, index) => index < (positionType === 1 ? 2 : 4))
 }

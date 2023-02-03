@@ -5,7 +5,44 @@ import { setRedis } from '../config/redis.config.js';
 import { TokenStatus } from '../config/user.config.js';
 import { registerNewPlayerForGame, reverseGameBoard } from '../helpers/game.helper.js';
 import { validateAuthToken } from '../middlewares/user.middleware.js';
+import { Game } from '../models/game.model.js';
+import { User } from '../models/user.model.js';
 import { redisSetKeyValue } from '../services/redis.service.js';
+
+export const findGame = async (gameId: mongoose.Types.ObjectId) : Promise<any> => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const existingGame = await Game.findById(gameId).populate({
+                path: 'player1',
+                populate: {
+                    path: 'userId'
+                }
+            }).populate({
+                path: 'player2',
+                populate: {
+                    path: 'userId'
+                }
+            })
+
+            if (existingGame) {
+                resolve({
+                    success: true,
+                    game: existingGame
+                })
+            } else {
+                reject({
+                    success: false,
+                    message: 'invalid gameId'
+                })
+            }
+        } catch(e) {
+            reject({
+                success: false,
+                message: e.message
+            })
+        }
+    }) 
+}
 
 export const createGame = async (io: Server, socket: Socket, payload) : Promise<void> => {
     /**
@@ -41,7 +78,6 @@ export const createGame = async (io: Server, socket: Socket, payload) : Promise<
                     })
 
                 } else {
-
                     try {
                         /**
                          * store game on redis to make updation of game play faster

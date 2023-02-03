@@ -20,7 +20,8 @@ export const connectToRedis = () => {
 export const redisSetKeyValue = async (key, value, isJson = false) => {
     return new Promise(async (resolve, reject) => {
         try {
-            const stored = await redisClient.set(key, JSON.stringify(value));
+            value = isJson ? JSON.stringify(value) : value;
+            const stored = await redisClient.set(key, value);
             if (stored === 'OK') {
                 resolve({
                     success: true,
@@ -38,6 +39,33 @@ export const redisSetKeyValue = async (key, value, isJson = false) => {
             reject({
                 success: false,
                 message: e.message
+            });
+        }
+    });
+};
+export const redisGetKeyValue = async (key, isJson = false) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            var value = await redisClient.get(key);
+            if (value) {
+                if (isJson)
+                    value = JSON.parse(value);
+                resolve({
+                    success: true,
+                    value
+                });
+            }
+            else {
+                reject({
+                    success: false,
+                    message: 'not found'
+                });
+            }
+        }
+        catch (e) {
+            reject({
+                success: false,
+                message: `redis failed : ${e.message}`
             });
         }
     });
