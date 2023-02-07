@@ -127,7 +127,8 @@ export const registerNewPlayerForGame = async (userId, onlineUsers) => {
                     if (onlineWaitingPlayer) {
                         try {
                             const updateWaitingPlayer = await Player.findByIdAndUpdate(onlineWaitingPlayer.id, {
-                                waiting: false
+                                waiting: false,
+                                turn: true
                             }, { new: true });
                             if (updateWaitingPlayer) {
                                 newPlayer['userId'] = userId;
@@ -136,6 +137,7 @@ export const registerNewPlayerForGame = async (userId, onlineUsers) => {
                                 newPlayer['killed'] = [];
                                 newPlayer['lose'] = [];
                                 newPlayer['waiting'] = false;
+                                newPlayer['turn'] = false;
                             }
                             else {
                                 reject({
@@ -158,6 +160,7 @@ export const registerNewPlayerForGame = async (userId, onlineUsers) => {
                         newPlayer['killed'] = [];
                         newPlayer['lose'] = [];
                         newPlayer['waiting'] = true;
+                        newPlayer['turn'] = true;
                     }
                     try {
                         const insertPlayer = await Player.create(newPlayer);

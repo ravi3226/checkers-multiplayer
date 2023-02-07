@@ -24,6 +24,10 @@ const PlayerCollectionSchema : mongoose.Schema = new mongoose.Schema({
     waiting: {
         type: Boolean,
         required: true
+    },
+    turn: {
+        type: Boolean,
+        default: false
     }
 }, { timestamps: true })
 

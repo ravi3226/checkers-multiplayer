@@ -136,7 +136,8 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                     if (onlineWaitingPlayer) {   
                         try {
                             const updateWaitingPlayer = await Player.findByIdAndUpdate(onlineWaitingPlayer.id, {
-                                waiting: false
+                                waiting: false,
+                                turn: true
                             }, { new: true });
     
                             if (updateWaitingPlayer) {
@@ -146,6 +147,7 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                                 newPlayer['killed'] = []
                                 newPlayer['lose'] = []
                                 newPlayer['waiting'] = false
+                                newPlayer['turn'] = false
                             } else {
                                 reject({
                                     success: false,
@@ -158,6 +160,7 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                                 message: `failed updating waiting player : ${e.message}`
                             })
                         }
+                        
                     } else {
                         newPlayer['userId'] = userId;
                         newPlayer['normal_positions'] = Object.keys(newGameBoard.player1);
@@ -165,6 +168,7 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                         newPlayer['killed'] = []
                         newPlayer['lose'] = []
                         newPlayer['waiting'] = true
+                        newPlayer['turn'] = true
                     }
 
                     try {

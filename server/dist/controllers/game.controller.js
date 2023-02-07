@@ -85,9 +85,9 @@ export const createGame = async (io, socket, payload) => {
                              */
                             socket.emit('game:create:success', {
                                 waiting: false,
-                                player1: registerNewGameWithPlayer.newGameBoard.player1,
-                                player2: registerNewGameWithPlayer.newGameBoard.player2,
-                                board: registerNewGameWithPlayer.newGameBoard.board,
+                                player1: registerNewGameWithPlayer.newGameBoard.player2,
+                                player2: registerNewGameWithPlayer.newGameBoard.player1,
+                                board: reverseGameBoard(registerNewGameWithPlayer.newGameBoard.board),
                                 gameId: registerNewGameWithPlayer.gameId
                             });
                             /**
@@ -96,9 +96,9 @@ export const createGame = async (io, socket, payload) => {
                              */
                             socket.to(registerNewGameWithPlayer.oponentSocketId).emit('game:create:success', {
                                 waiting: false,
-                                player2: registerNewGameWithPlayer.newGameBoard.player1,
-                                player1: registerNewGameWithPlayer.newGameBoard.player2,
-                                board: reverseGameBoard(registerNewGameWithPlayer.newGameBoard.board),
+                                player1: registerNewGameWithPlayer.newGameBoard.player1,
+                                player2: registerNewGameWithPlayer.newGameBoard.player2,
+                                board: registerNewGameWithPlayer.newGameBoard.board,
                                 gameId: registerNewGameWithPlayer.gameId
                             });
                         }
