@@ -6,7 +6,6 @@ import { TokenStatus } from '../config/user.config.js';
 import { registerNewPlayerForGame, reverseGameBoard } from '../helpers/game.helper.js';
 import { validateAuthToken } from '../middlewares/user.middleware.js';
 import { Game } from '../models/game.model.js';
-import { User } from '../models/user.model.js';
 import { redisSetKeyValue } from '../services/redis.service.js';
 
 export const findGame = async (gameId: mongoose.Types.ObjectId) : Promise<any> => {
@@ -74,7 +73,7 @@ export const createGame = async (io: Server, socket: Socket, payload) : Promise<
                         waiting: true,
                         player1: registerNewGameWithPlayer.newGameBoard.player1,
                         player2: registerNewGameWithPlayer.newGameBoard.player2,
-                        board: reverseGameBoard(registerNewGameWithPlayer.newGameBoard.board)
+                        board: registerNewGameWithPlayer.newGameBoard.board
                     })
 
                 } else {

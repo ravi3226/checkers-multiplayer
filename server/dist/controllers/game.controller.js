@@ -65,7 +65,7 @@ export const createGame = async (io, socket, payload) => {
                         waiting: true,
                         player1: registerNewGameWithPlayer.newGameBoard.player1,
                         player2: registerNewGameWithPlayer.newGameBoard.player2,
-                        board: reverseGameBoard(registerNewGameWithPlayer.newGameBoard.board)
+                        board: registerNewGameWithPlayer.newGameBoard.board
                     });
                 }
                 else {

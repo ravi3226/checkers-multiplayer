@@ -334,7 +334,6 @@ export const findPossibleMove = ({
     game: GameBoard,
     positionType: PositionType
 }) : PossibleMove[] => {
-    console.log(position)
     /**
      * check if there is any kill possible or not
      */

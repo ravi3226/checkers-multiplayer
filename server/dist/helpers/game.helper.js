@@ -300,7 +300,6 @@ export const findCross = ({ position, forwardOrBack = false, leftOrRight = false
  * 2. find normal
  */
 export const findPossibleMove = ({ position, playerType, game, positionType = 1 }) => {
-    console.log(position);
     /**
      * check if there is any kill possible or not
      */
