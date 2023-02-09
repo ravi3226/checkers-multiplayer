@@ -180,10 +180,11 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                                     /**
                                      * register game with both ready player
                                      */
+                                    const expirationTime = addMinutes(new Date(), 10)
                                     const registerGame = await Game.create({
                                         player1: onlineWaitingPlayer.id,
                                         player2: insertPlayer.id,
-                                        expiresAt: addMinutes(new Date(), 10)
+                                        expiresAt: expirationTime
                                     })
             
                                     if (registerGame) {
@@ -192,7 +193,8 @@ export const registerNewPlayerForGame = async (userId: mongoose.Types.ObjectId, 
                                             waiting: false,
                                             gameId: registerGame.id,
                                             newGameBoard: newGameBoard,
-                                            oponentSocketId: onlineWaitingPlayer.userId.socketId
+                                            oponentSocketId: onlineWaitingPlayer.userId.socketId,
+                                            expiresAt: expirationTime
                                         })
                                     } else {
                                         reject({
@@ -371,7 +373,7 @@ export const findKillPossibleMoves = ({
         /**
          * find kills for normal position
          */
-        const directionConfigs = positionType === 1 ? normalDirectionConfig(playerType) : directionConfig;
+        const directionConfigs = positionType === 1 ? normalDirectionConfig(playerType) : directionConfig; // 2
 
         Object.keys(directionConfigs).forEach(directionPosition => {
             const firstJump = findCross({...directionConfigs[directionPosition], position: position, steps: 2})
@@ -382,19 +384,18 @@ export const findKillPossibleMoves = ({
                 if ( firstJump && !game.player1[firstJump] && !game.player2[firstJump] ) {
                     foundKill['first'] = {};
                     foundKill['first']['from'] = position;
-                    foundKill['first']['kill'] = between;
+                    foundKill['first']['kill'] = [between];
                     foundKill['first']['jumpTo'] = firstJump;
                 }
             }
 
             if (foundKill['first']) {
                 Object.keys(directionConfigs).forEach(directionPosition => {
-                    const firstJump = findCross({...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 2})
-                    const between = findCross({...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 1})
+                    const firstJump = findCross({ ...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 2 })
+                    const between = findCross({ ...directionConfigs[directionPosition], position: foundKill['first'].jumpTo, steps: 1 })
 
-                    var foundKill = {}
                     if ( between && game[otherPlayer][between] ) {
-                        if ( firstJump && !game.player1[firstJump] && !game.player2[firstJump] && firstJump !== position) {
+                        if ( firstJump && !game.player1[firstJump] && !game.player2[firstJump] && firstJump !== position ) {
                             foundKill['first']['from2'] = foundKill['first'].jumpTo;
                             foundKill['first']['kill'] = [...foundKill['first']['kill'], between];
                             foundKill['first']['jumpTo2'] = firstJump;

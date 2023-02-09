@@ -40,7 +40,8 @@ export interface RegisterNewGameWithPlayer {
     gameId?: string,
     newGameBoard?: GameBoard,
     waiting?: boolean,
-    oponentSocketId?: string
+    oponentSocketId?: string,
+    expiresAt?: Date
 }
 
 export interface PossibleMove {

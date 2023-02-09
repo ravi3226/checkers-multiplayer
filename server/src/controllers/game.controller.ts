@@ -98,7 +98,8 @@ export const createGame = async (io: Server, socket: Socket, payload) : Promise<
                                 player1: registerNewGameWithPlayer.newGameBoard.player2,
                                 player2: registerNewGameWithPlayer.newGameBoard.player1,
                                 board: reverseGameBoard(registerNewGameWithPlayer.newGameBoard.board),
-                                gameId: registerNewGameWithPlayer.gameId
+                                gameId: registerNewGameWithPlayer.gameId,
+                                expiresAt: registerNewGameWithPlayer.expiresAt
                             })
 
                             /**
@@ -110,7 +111,8 @@ export const createGame = async (io: Server, socket: Socket, payload) : Promise<
                                 player1: registerNewGameWithPlayer.newGameBoard.player1,
                                 player2: registerNewGameWithPlayer.newGameBoard.player2,
                                 board: registerNewGameWithPlayer.newGameBoard.board,
-                                gameId: registerNewGameWithPlayer.gameId
+                                gameId: registerNewGameWithPlayer.gameId,
+                                expiresAt: registerNewGameWithPlayer.expiresAt
                             })
                         } else {
                             socket.emit('game:create:fail', {
@@ -121,6 +123,7 @@ export const createGame = async (io: Server, socket: Socket, payload) : Promise<
                         socket.emit('game:create:fail', {
                             general: [`failed redis : ${e.message}`]
                         })
+                        
                     }
 
                 }

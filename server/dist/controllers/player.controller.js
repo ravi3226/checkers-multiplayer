@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { errorCodes } from "../helpers/error.helper.js";
 import { findPossibleMove, validatePosition } from "../helpers/game.helper.js";
 import { validateAuthToken } from "../middlewares/user.middleware.js";
+import { Game } from "../models/game.model.js";
 import { Player } from "../models/player.model.js";
 import { redisGetKeyValue, redisSetKeyValue } from "../services/redis.service.js";
 import { findGame } from "./game.controller.js";
@@ -91,6 +92,7 @@ export const getPossibleMove = async (io, socket, payload) => {
                         }
                     }
                     catch (e) {
+                        console.log(e.stack);
                         socket.emit('player:move-possible:fail', {
                             general: [e.message]
                         });
@@ -158,27 +160,39 @@ export const moveTile = async (io, socket, payload) => {
              */
             try {
                 const foundGame = await findGame(new mongoose.Types.ObjectId(payload.gameId));
+                /**
+                 * decide which player is requesting.
+                 */
+                var this_player = null;
+                var other_player = null;
                 if (foundGame.success) {
-                    var this_player = null;
-                    var other_player = null;
                     ['player1', 'player2'].forEach(player_title => {
                         if (foundGame.game[player_title].userId.id == tokenValidate.id)
                             this_player = foundGame.game[player_title];
                         else
                             other_player = foundGame.game[player_title];
                     });
+                    /**
+                     * decide normal direction for requesting player is forward or back side
+                     */
+                    var playerType = 'player1';
+                    var otherPlayerType = 'player2';
+                    if (new Date(this_player.createdAt) > new Date(other_player.createdAt)) {
+                        playerType = 'player2';
+                    }
+                    if (new Date(this_player.createdAt) > new Date(other_player.createdAt)) {
+                        otherPlayerType = 'player1';
+                    }
+                }
+                /**
+                 * check -> game is over or not.
+                 */
+                if (foundGame.success && foundGame.game.isOver) {
+                    socket.emit('game:over:success', foundGame.game);
+                    io.to(foundGame.game[otherPlayerType].userId.socketId).emit('game:over:success', foundGame.game);
+                }
+                else if (foundGame.success) {
                     if (this_player.turn) {
-                        /**
-                         * decide normal direction for requesting player is forward or back side
-                         */
-                        var playerType = 'player1';
-                        var otherPlayerType = 'player2';
-                        if (new Date(this_player.createdAt) > new Date(other_player.createdAt)) {
-                            playerType = 'player2';
-                        }
-                        if (new Date(this_player.createdAt) > new Date(other_player.createdAt)) {
-                            otherPlayerType = 'player1';
-                        }
                         try {
                             /**
                              * get latest gameplay state from redis
@@ -230,7 +244,10 @@ export const moveTile = async (io, socket, payload) => {
                                          */
                                         var kills = [];
                                         allPossibleMoves.forEach((move) => {
-                                            if (move.from === payload.from && move?.kill) {
+                                            if (move.from === payload.from && move?.kill && move?.jumpTo === payload.to) {
+                                                kills.push(move.kill[0]);
+                                            }
+                                            else if (move.from === payload.from && move?.kill && move?.jumpTo2 === payload.to) {
                                                 kills.push(...move.kill);
                                             }
                                         });
@@ -302,8 +319,25 @@ export const moveTile = async (io, socket, payload) => {
                                                                 var response = {};
                                                                 response['from'] = payload.from;
                                                                 response['to'] = payload.to;
-                                                                if (kills.length > 0)
+                                                                if (kills.length > 0) {
                                                                     response['killed'] = kills;
+                                                                    if (Object.keys(updateGame[otherPlayerType]).length < 1) {
+                                                                        try {
+                                                                            const game = await Game.findOneAndUpdate({
+                                                                                [playerType]: new mongoose.Types.ObjectId(updateThisPlayer.id)
+                                                                            }, { isOver: true }, { new: true }).populate(['player1', 'player2']);
+                                                                            if (game && game.isOver) {
+                                                                                socket.emit('game:over:success', game);
+                                                                                io.to(foundGame.game[otherPlayerType].userId.socketId).emit('game:over:success', response);
+                                                                            }
+                                                                        }
+                                                                        catch (e) {
+                                                                            socket.emit('game:over:fail', {
+                                                                                general: [`failed updating game over state : ${e.message}`]
+                                                                            });
+                                                                        }
+                                                                    }
+                                                                }
                                                                 socket.emit('player:move:success', response);
                                                                 /**
                                                                  * check if other player has left or not
@@ -315,7 +349,7 @@ export const moveTile = async (io, socket, payload) => {
                                                                     });
                                                                 }
                                                                 else {
-                                                                    socket.to(foundGame.game[otherPlayerType].userId.socketId).emit('player:move:success', response);
+                                                                    io.to(foundGame.game[otherPlayerType].userId.socketId).emit('player-other:move:success', response);
                                                                     socket.emit('player:move:success', response);
                                                                 }
                                                             }

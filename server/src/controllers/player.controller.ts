@@ -6,6 +6,7 @@ import { TokenStatus } from "../config/user.config.js";
 import { errorCodes } from "../helpers/error.helper.js";
 import { findPossibleMove, validatePosition } from "../helpers/game.helper.js";
 import { validateAuthToken } from "../middlewares/user.middleware.js";
+import { Game } from "../models/game.model.js";
 import { Player } from "../models/player.model.js";
 import { redisGetKeyValue, redisSetKeyValue } from "../services/redis.service.js";
 import { findGame } from "./game.controller.js";
@@ -100,6 +101,7 @@ export const getPossibleMove = async (io: Server, socket: Socket, payload: any) 
                         }
 
                     } catch(e) {
+                        console.log(e.stack);
                         socket.emit('player:move-possible:fail', {
                             general: [e.message]
                         })
@@ -168,28 +170,43 @@ export const moveTile = async (io: Server, socket: Socket, payload: any) : Promi
              */
             try {
                 const foundGame = await findGame(new mongoose.Types.ObjectId(payload.gameId))
-                
-                if ( foundGame.success ) {
-                    var this_player = null;
-                    var other_player = null;
 
+                /**
+                 * decide which player is requesting.
+                 */
+                var this_player = null;
+                var other_player = null;
+
+                if (foundGame.success) {
                     ['player1', 'player2'].forEach(player_title => {
                         if (foundGame.game[player_title].userId.id == tokenValidate.id) this_player = foundGame.game[player_title];
                         else other_player = foundGame.game[player_title];
                     })
+    
+                    /**
+                     * decide normal direction for requesting player is forward or back side
+                     */
+                    var playerType : string = 'player1';
+                    var otherPlayerType : string = 'player2';
+                    if ( new Date(this_player.createdAt) > new Date(other_player.createdAt) ) {
+                        playerType = 'player2';
+                    }
+                    if ( new Date(this_player.createdAt) > new Date(other_player.createdAt) ) {
+                        otherPlayerType = 'player1';
+                    }
+                }
+
+                /**
+                 * check -> game is over or not.
+                 */
+                if (foundGame.success && foundGame.game.isOver) {
+
+                    socket.emit('game:over:success', foundGame.game);
+                    io.to(foundGame.game[otherPlayerType].userId.socketId).emit('game:over:success', foundGame.game);
+
+                } else if ( foundGame.success ) {
 
                     if ( this_player.turn ) {
-                        /**
-                         * decide normal direction for requesting player is forward or back side
-                         */
-                        var playerType : string = 'player1';
-                        var otherPlayerType : string = 'player2';
-                        if ( new Date(this_player.createdAt) > new Date(other_player.createdAt) ) {
-                            playerType = 'player2';
-                        }
-                        if ( new Date(this_player.createdAt) > new Date(other_player.createdAt) ) {
-                            otherPlayerType = 'player1';
-                        }
 
                         try {
                             /**
@@ -245,7 +262,9 @@ export const moveTile = async (io: Server, socket: Socket, payload: any) : Promi
                                          */
                                         var kills = []
                                         allPossibleMoves.forEach((move: PossibleMove) => {
-                                            if (move.from === payload.from && move?.kill) {
+                                            if (move.from === payload.from && move?.kill && move?.jumpTo === payload.to) {
+                                                kills.push(move.kill[0])
+                                            } else if (move.from === payload.from && move?.kill && move?.jumpTo2 === payload.to) {
                                                 kills.push(...move.kill)
                                             }
                                         })
@@ -254,7 +273,6 @@ export const moveTile = async (io: Server, socket: Socket, payload: any) : Promi
                                          * remove kill positions and moved positions on other player's positions list
                                          * update kills, loses and moved positions in database
                                          */
-
                                         if (kills.length > 0) {
                                             kills.forEach(kill => {
                                                 if ( updateGame[otherPlayerType][kill] ) delete updateGame[otherPlayerType][kill];
@@ -329,7 +347,28 @@ export const moveTile = async (io: Server, socket: Socket, payload: any) : Promi
                                                                 response['from'] = payload.from;
                                                                 response['to'] = payload.to;
 
-                                                                if (kills.length > 0) response['killed'] = kills;
+                                                                if (kills.length > 0) {
+                                                                    response['killed'] = kills;
+
+                                                                    if ( Object.keys(updateGame[otherPlayerType]).length < 1 ) {
+                                                                        try {
+
+                                                                            const game = await Game.findOneAndUpdate({
+                                                                                [playerType]: new mongoose.Types.ObjectId(updateThisPlayer.id)
+                                                                            }, { isOver: true }, { new: true }).populate(['player1', 'player2']);
+
+                                                                            if (game && game.isOver) {
+                                                                                socket.emit('game:over:success', game);
+                                                                                io.to(foundGame.game[otherPlayerType].userId.socketId).emit('game:over:success', response);
+                                                                            }
+
+                                                                        } catch(e) {
+                                                                            socket.emit('game:over:fail', {
+                                                                                general: [`failed updating game over state : ${e.message}`]
+                                                                            })
+                                                                        }
+                                                                    }
+                                                                }
 
                                                                 socket.emit('player:move:success', response)
 
@@ -342,7 +381,7 @@ export const moveTile = async (io: Server, socket: Socket, payload: any) : Promi
                                                                         otherPlayer: foundGame.game[otherPlayerType].userId.email
                                                                     })
                                                                 } else {
-                                                                    socket.to(foundGame.game[otherPlayerType].userId.socketId).emit('player:move:success', response);
+                                                                    io.to(foundGame.game[otherPlayerType].userId.socketId).emit('player-other:move:success', response);
                                                                     socket.emit('player:move:success', response);
                                                                 }
 

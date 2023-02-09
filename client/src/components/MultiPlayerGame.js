@@ -1,6 +1,9 @@
 import { Container, Grid, Paper } from '@mui/material'
 import React from 'react'
 import ShowMessage from './ShowMessage';
+import LoadingButton from '@mui/lab/LoadingButton';
+import AvTimerIcon from '@mui/icons-material/AvTimer';
+import Countdown from 'react-countdown';
 
 const MultiPlayerGame = ({socket}) => {
 
@@ -8,10 +11,12 @@ const MultiPlayerGame = ({socket}) => {
     const [message, setMessage] = React.useState('');
 
     const [gameBoard, setGameBoard] = React.useState(null);
-    const [player1Tiles, setPlayer1Tiles] = React.useState([]);
-    const [player2Tiles, setPlayer2Tiles] = React.useState([]);
-    const [possibleMove, setPossibleMove] = React.useState([]);
+    const [player1Tiles, setPlayer1Tiles] = React.useState(null);
+    const [player2Tiles, setPlayer2Tiles] = React.useState(null);
     const [targeted, setTargeted] = React.useState(null);
+    const [possibleMove, setPossibleMove] = React.useState([]);
+    const [expiresAt, setExpiresAt] = React.useState(null);
+    const [isWaiting, setIsWaiting] = React.useState(true);
 
     const positionClick = (e, position) => {
 
@@ -40,13 +45,78 @@ const MultiPlayerGame = ({socket}) => {
     const showMessage = (message) => {
         setOpen(true);
         setMessage(message);
-      }
+    }
+
+    const movePlayer1Tile = (from, to) => {
+        setPlayer1Tiles(positions => {
+            let newPositions = {}
+
+            newPositions[to] = positions[from];
+            Object.keys(positions).forEach(position => {
+                if ( position !== from ) newPositions[position] = positions[position];
+            })
+            
+            return newPositions;
+        })
+    }
+    const movePlayer2Tile = (from, to) => {
+        setPlayer2Tiles(positions => {
+            let newPositions = {}
+
+            newPositions[to] = positions[from];
+            Object.keys(positions).forEach(position => {
+                if ( position !== from ) newPositions[position] = positions[position];
+            })
+
+            return newPositions;
+        })
+    }
+
+    const removeKilledOne = (killed, loseOrKilled) => {
+        if (!Array.isArray(killed)) {
+            throw new Error('killed is not an array.')
+        } else {
+            if (loseOrKilled) {
+                setPlayer2Tiles(positions => {
+                    let newPositions = {}
+    
+                    Object.keys(positions).forEach(position => {
+                        if (!killed.includes(position)) newPositions[position] = positions[position]
+                    })
+    
+                    return newPositions;
+                })
+            } else {
+                setPlayer1Tiles(positions => {
+                    let newPositions = {}
+    
+                    Object.keys(positions).forEach(position => {
+                        if (!killed.includes(position)) newPositions[position] = positions[position]
+                    })
+    
+                    return newPositions;
+                })
+            }
+        }
+    }
 
 
     React.useEffect(() => {
+
         function initGameWithBot() {
+            socket.on('game:over:success', (payload) => {
+                console.log(payload);
+                alert('game is over')
+            })
             socket.on('player:move:success', (payload) => {
-                console.log(payload)
+                movePlayer1Tile(payload.from, payload.to)
+
+                if (payload.killed) removeKilledOne(payload.killed, true)
+            })
+            socket.on('player-other:move:success', (payload) => {
+                movePlayer2Tile(payload.from, payload.to)
+
+                if (payload.killed) removeKilledOne(payload.killed, false);
             })
 
             socket.on('player:move:fail', (payload) => {
@@ -54,10 +124,12 @@ const MultiPlayerGame = ({socket}) => {
             })
             
             socket.on('player:move-possible:success', (payload) => {
+                console.log(payload)
                 let moves = [];
                 if (Array.isArray(payload)) {
                     payload.forEach(move => {
-                        moves.push(move.jumpTo);
+                        if (move.jumpTo2) moves.push(move.jumpTo2)
+                        else moves.push(move.jumpTo);
                     })
                 }
 
@@ -69,6 +141,15 @@ const MultiPlayerGame = ({socket}) => {
             })
 
             socket.on('game:create:success', (payload) => {
+                if (payload.expiresAt) {
+                    const endTime = new Date(payload.expiresAt);
+                    const startTime = new Date();
+
+                    var seconds = (endTime.getTime() - startTime.getTime()) / 1000;
+
+                    setExpiresAt(seconds)
+                }
+                setIsWaiting(payload.waiting)
                 setPlayer1Tiles(payload.player1)
                 setPlayer2Tiles(payload.player2)
                 setGameBoard(payload)
@@ -94,13 +175,18 @@ const MultiPlayerGame = ({socket}) => {
     }, [socket])
 
   return (
-    <Container sx={{
-        paddingTop: "10px",
-    }}>
+    <Container style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', flexDirection: 'column', alignContent: 'center', alignItems: 'center' }}>
+        <LoadingButton
+            loading={isWaiting}
+            loadingPosition="start"
+            startIcon={<AvTimerIcon />}
+            variant="outlined"
+        >
+            {isWaiting ? 'wait please..' : <Countdown date={Date.now() + 1000 * 60 * 10} />}
+        </LoadingButton>
         <Grid sx={{
-            backgroundColor: "#E8D2A6",
-            paddingBottom: '20px'
-        }} maxWidth="950px" maxHeight="950px" container spacing={0}>
+            backgroundColor: "#E8D2A6"
+        }} maxWidth="916px" maxHeight="916px" container spacing={0}>
             {gameBoard && Object.keys(gameBoard.board).map((position) => (
                 <Grid item key={position}>
                     <Paper 
@@ -122,8 +208,8 @@ const MultiPlayerGame = ({socket}) => {
                         square 
                         id={position} 
                     >
-                        {player1Tiles[position] ? <img src="/images/player_tile.png" alt={position} /> : ''}
-                        {player2Tiles[position] ? <img src="/images/bot_tile.png" alt={position} /> : ''}
+                        {player1Tiles[position] ? player1Tiles[position] === 'normal' ? <img src="/images/player_tile.png" alt={position} /> : <img src="/images/player_tile_king.png" alt={position} /> : ''}
+                        {player2Tiles[position] ? player2Tiles[position] === 'normal' ? <img src="/images/bot_tile.png" alt={position} /> : <img src="/images/bot_tile_king.png" alt={position} /> : ''}
                     </Paper>
                 </Grid>
             ))}

@@ -11,6 +11,10 @@ const GameCollectionSchema = new mongoose.Schema({
     expiresAt: {
         type: Date,
         required: true
+    },
+    isOver: {
+        type: Boolean,
+        default: false
     }
 }, { timestamps: true });
 /**
