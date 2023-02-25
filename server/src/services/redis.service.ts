@@ -11,8 +11,8 @@ export const connectToRedis = () => {
     
         client.on('error', (err) => {
             global.logger.error('Redis Client Error', err.message)
-            process.exit(0);
             reject(err);
+            process.exit(0);
         });
     
         await client.connect();
